@@ -5,6 +5,8 @@
 [![License][license-shield]](LICENSE)
 [![hacs][hacsbadge]][hacs]
 
+[![Add to HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=miguelangel-nubla&repository=homeassistant_chipsea_scale&category=integration)
+
 A Home Assistant custom integration for Chipsea-based Bluetooth smart scales including:
 - Chipsea-BLE branded scales
 - SmartChef kitchen scales  
