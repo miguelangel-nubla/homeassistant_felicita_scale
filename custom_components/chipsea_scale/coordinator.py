@@ -352,6 +352,9 @@ class ChipseaScaleDataUpdateCoordinator(DataUpdateCoordinator[ChipseaScaleData])
         self._client = None
         self._notification_enabled = False
         
+        # Trigger entity update to reflect unavailable state
+        self.async_update_listeners()
+        
 
     async def _async_reconnect(self) -> None:
         """Attempt to reconnect to the scale."""
