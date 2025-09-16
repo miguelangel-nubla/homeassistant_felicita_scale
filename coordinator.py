@@ -25,6 +25,26 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+# Protocol constants
+PACKET_HEADER = 0xCA
+MIN_PACKET_LENGTH = 7
+WEIGHT_BYTES_START = 5
+STATUS_BYTE_INDEX = 3
+
+# Status byte bit masks
+SIGN_BIT_MASK = 0x80
+STABLE_BIT_MASK = 0x01
+UNIT_DECIMAL_MASK = 0x3F
+
+# Unit type constants
+UNIT_GRAMS = 0x00
+UNIT_OUNCES = 0x03
+UNIT_POUNDS = 0x06
+UNIT_KILOGRAMS = 0x08
+
+# Weight validation limits
+MAX_WEIGHT_GRAMS = 5000  # 5kg in grams
+
 
 class ChipseaScaleDataUpdateCoordinator(DataUpdateCoordinator[ChipseaScaleData]):
     """Class to manage fetching data from the Chipsea Scale."""
@@ -45,12 +65,15 @@ class ChipseaScaleDataUpdateCoordinator(DataUpdateCoordinator[ChipseaScaleData])
         self._connection_attempts = 0
         self._last_successful_connection = None
         self._total_disconnections = 0
+        self._last_connection_attempt = None
+        self._min_reconnect_interval = timedelta(seconds=5)
+        self._availability_check_timer = None
 
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_interval=timedelta(minutes=1),  # Fallback interval
+            update_interval=None,
             config_entry=config_entry,
         )
 
@@ -92,20 +115,25 @@ class ChipseaScaleDataUpdateCoordinator(DataUpdateCoordinator[ChipseaScaleData])
         if change == bluetooth.BluetoothChange.ADVERTISEMENT:
             self._ble_device = service_info.device
 
-            # If we're not connected and we see an advertisement, try to reconnect
             if not self._client or not self._client.is_connected:
-                _LOGGER.debug(
-                    "Device advertisement detected for %s, attempting reconnection",
-                    self.address,
-                )
-                self.hass.create_task(self._async_reconnect())
+                now = datetime.now()
+                if (self._last_connection_attempt is None or 
+                    now - self._last_connection_attempt >= self._min_reconnect_interval):
+                    _LOGGER.debug(
+                        "Device advertisement detected for %s, attempting reconnection",
+                        self.address,
+                    )
+                    self._last_connection_attempt = now
+                    self.hass.create_task(self._async_reconnect())
+                else:
+                    _LOGGER.debug(
+                        "Device advertisement detected for %s, but throttling reconnection (last attempt %.1fs ago)",
+                        self.address,
+                        (now - self._last_connection_attempt).total_seconds()
+                    )
 
     async def _async_update_data(self) -> ChipseaScaleData:
-        """Update data via Bluetooth."""
-        if not self._client or not self._client.is_connected:
-            await self._ensure_connected()
-
-        # Return current data - updates come via notifications
+        """Return current data - all updates are reactive via Bluetooth notifications."""
         return self.data or ChipseaScaleData()
 
     async def _ensure_connected(self) -> None:
@@ -133,43 +161,41 @@ class ChipseaScaleDataUpdateCoordinator(DataUpdateCoordinator[ChipseaScaleData])
                     self._ble_device,
                     self.address,
                     disconnected_callback=self._on_disconnect,
-                    timeout=10.0,
-                    max_attempts=3,
+                    timeout=15.0,
+                    max_attempts=2,
                 )
 
-                # Enable notifications
                 await self._setup_notifications()
 
-                # Track successful connection
                 self._last_successful_connection = datetime.now()
 
                 if not self._unavailable_logged:
                     _LOGGER.info("Successfully connected to Chipsea Scale (attempt %d)",
                                 self._connection_attempts)
 
-                # Clear unavailable flag on successful connection
                 if self._unavailable_logged:
                     _LOGGER.info("Chipsea Scale is back online")
                     self._unavailable_logged = False
 
             except (TimeoutError, BleakError) as err:
-                # Check if this is a "no connection slots" or "device no longer reachable" error
-                # These are expected for battery-powered devices that disconnect automatically
                 error_msg = str(err).lower()
-                if any(phrase in error_msg for phrase in [
+                expected_errors = {
                     "no backend with an available connection slot",
-                    "device is no longer reachable",
-                    "out of connection slots"
-                ]):
-                    if not self._unavailable_logged:
-                        _LOGGER.info(
-                            "Device not reachable (expected for battery-powered scales): %s",
-                            err,
-                        )
-                        self._unavailable_logged = True
-                elif not self._unavailable_logged:
-                    _LOGGER.error("Failed to connect to Chipsea Scale: %s", err)
+                    "device is no longer reachable", 
+                    "out of connection slots",
+                    "device disconnected",
+                    "not connected"
+                }
+                
+                is_expected_error = any(phrase in error_msg for phrase in expected_errors)
+                
+                if not self._unavailable_logged:
+                    if is_expected_error:
+                        _LOGGER.info("Device not reachable (expected for battery-powered scales): %s", err)
+                    else:
+                        _LOGGER.error("Failed to connect to Chipsea Scale: %s", err)
                     self._unavailable_logged = True
+                    
                 raise UpdateFailed(f"Failed to connect: {err}") from err
 
     async def _setup_notifications(self) -> None:
@@ -199,18 +225,20 @@ class ChipseaScaleDataUpdateCoordinator(DataUpdateCoordinator[ChipseaScaleData])
                 if not self.data:
                     self.data = ChipseaScaleData()
 
-                self.data.update_weight(
-                    weight_data["weight"],
-                    weight_data.get("stable", False),
-                )
-                
-                # Update unit if detected
-                if "unit" in weight_data:
-                    self.data.unit = weight_data["unit"]
+                # Update all weight-related fields
+                self.data.weight = weight_data["weight"]  # Normalized to grams
+                self.data.is_stable = weight_data.get("stable", False)
+                self.data.unit = weight_data["unit"]  # Scale's native unit
+                self.data.raw_weight = weight_data["raw_weight"]  # Weight in native unit
+                self.data.decimals = weight_data["decimals"]  # Decimal places
+                self.data.last_measurement = datetime.now()
 
                 # Update battery level if available
                 if "battery_level" in weight_data:
                     self.data.battery_level = weight_data["battery_level"]
+
+                # Schedule availability check
+                self._schedule_availability_check()
 
                 # Notify Home Assistant of the update
                 self.async_set_updated_data(self.data)
@@ -218,118 +246,124 @@ class ChipseaScaleDataUpdateCoordinator(DataUpdateCoordinator[ChipseaScaleData])
         except (KeyError, TypeError, ValueError) as err:
             _LOGGER.error("Error processing notification: %s", err)
 
+    def _schedule_availability_check(self) -> None:
+        """Schedule a check for data availability after 35 seconds."""
+        if self._availability_check_timer:
+            self._availability_check_timer.cancel()
+            
+        self._availability_check_timer = self.hass.loop.call_later(
+            35.0, self._check_availability
+        )
+
+    @callback
+    def _check_availability(self) -> None:
+        """Check if data is still recent and trigger entity update if not."""
+        if self.data and not self.data.is_recent:
+            _LOGGER.debug("Scale data is stale, triggering entity update for unavailable state")
+            self.async_update_listeners()
+        
+        self._availability_check_timer = None
+
+    def _validate_packet(self, data: bytearray) -> bool:
+        """Validate packet header and basic structure."""
+        if len(data) < MIN_PACKET_LENGTH:
+            _LOGGER.debug("Insufficient data length: %d bytes (minimum %d expected)", len(data), MIN_PACKET_LENGTH)
+            return False
+
+        if data[0] != PACKET_HEADER:
+            _LOGGER.debug("Invalid packet header: %02x (expected %02x)", data[0], PACKET_HEADER)
+            return False
+
+        return True
+
+    def _extract_unit_and_decimals(self, status_byte: int) -> tuple[str, int]:
+        """Extract unit type and decimal places from status byte."""
+        unit_middle_bits = (status_byte >> 1) & UNIT_DECIMAL_MASK
+        unit_bits = (unit_middle_bits >> 2) & 0x0F
+        decimal_bits = unit_middle_bits & 0x03
+        
+        unit_map = {
+            UNIT_KILOGRAMS: "kg",
+            UNIT_OUNCES: "oz", 
+            UNIT_POUNDS: "lb",
+            UNIT_GRAMS: "g"
+        }
+        
+        unit_detected = unit_map.get(unit_bits, "unknown")
+        
+        _LOGGER.debug("Status byte=0x%02x: unit_bits=0x%x decimals=%d -> %s", 
+                     status_byte, unit_bits, decimal_bits, unit_detected)
+        
+        return unit_detected, decimal_bits
+
+    def _convert_to_grams(self, weight: float, unit: str) -> float:
+        """Convert weight from native unit to grams."""
+        conversion_factors = {
+            "g": 1.0,
+            "kg": 1000.0,
+            "lb": 453.592,
+            "oz": 28.3495
+        }
+        
+        if unit in conversion_factors:
+            return weight * conversion_factors[unit]
+        else:
+            return weight
+
     def _decode_weight_bytes(self, data: bytearray) -> dict[str, Any] | None:
-        """Decode weight from characteristic data using OKOK protocol."""
-        if len(data) < 7:
-            _LOGGER.debug("Insufficient data length: %d bytes", len(data))
+        """Decode weight from characteristic data using Chipsea protocol."""
+        if len(data) > 8:
+            _LOGGER.debug("Extended packet size: %d bytes, using first 8 bytes", len(data))
+            data = data[:8]
+
+        if not self._validate_packet(data):
             return None
 
         try:
-            # Based on the existing script: weight at bytes 5-6 (big endian)
-            weight_raw = struct.unpack('>H', data[5:7])[0]
+            _LOGGER.debug("Raw packet: %s", ' '.join(f'{b:02x}' for b in data))
+            
+            weight_raw = struct.unpack('>H', data[WEIGHT_BYTES_START:WEIGHT_BYTES_START+2])[0]
+            
+            status_byte = data[STATUS_BYTE_INDEX] if len(data) > STATUS_BYTE_INDEX else 0
+            is_negative = bool(status_byte & SIGN_BIT_MASK)
+            is_stable = bool(status_byte & STABLE_BIT_MASK)
+            
+            unit_detected, decimal_bits = self._extract_unit_and_decimals(status_byte)
+            
+            _LOGGER.debug("Weight raw=0x%04x (%d) negative=%s stable=%s unit=%s decimals=%d", 
+                         weight_raw, weight_raw, is_negative, is_stable, unit_detected, decimal_bits)
 
-            # Detect unit from protocol data and convert to grams using HA converter
-            unit_detected = "g"  # Default assumption
-
-            # Check for unit indicators in the data
-            if len(data) > 3:
-                unit_byte = data[3]
-                _LOGGER.debug("Unit byte: 0x%02x", unit_byte)
-
-                # Infer unit from byte patterns (adjust based on your scale's behavior)
-                if unit_byte == 0x02:
-                    unit_detected = "lb"
-                elif unit_byte == 0x03:
-                    unit_detected = "kg"
-                elif unit_byte == 0x01:
-                    unit_detected = "g"
-                # Add more patterns as needed based on testing
-
-            # Convert raw value based on detected unit
             if weight_raw == 0:
                 weight_in_detected_unit = 0.0
             else:
-                # If scale shows 0.928 lb but raw value is 928, divide by 1000
-                # This handles the decimal scaling issue
-                if unit_detected in ["lb", "kg"]:
-                    weight_in_detected_unit = float(weight_raw) / 1000.0
-                else:
-                    weight_in_detected_unit = float(weight_raw)
+                scale_factor = 10 ** decimal_bits if decimal_bits > 0 else 1
+                weight_in_detected_unit = float(weight_raw) / scale_factor
+                if is_negative:
+                    weight_in_detected_unit = -weight_in_detected_unit
+            
 
-            # Convert to grams using Home Assistant's converter
-            try:
-                from homeassistant.util.unit_conversion import MassConverter
-                weight = MassConverter.convert(weight_in_detected_unit, unit_detected, "g")
-            except (ValueError, ImportError):
-                # Fallback if conversion fails
-                weight = weight_in_detected_unit
-                if unit_detected == "lb":
-                    weight *= 453.592
-                elif unit_detected == "kg":
-                    weight *= 1000
+            weight_grams = self._convert_to_grams(weight_in_detected_unit, unit_detected)
 
-            # Validate weight is within reasonable bounds (0-500kg)
-            if weight < 0 or weight > 500000:
-                _LOGGER.warning("Weight value out of range: %sg", weight)
+            if unit_detected in {"g", "kg", "lb", "oz"} and abs(weight_grams) > MAX_WEIGHT_GRAMS:
+                _LOGGER.warning("Weight value out of range: %.1fg (max: %dg)", weight_grams, MAX_WEIGHT_GRAMS)
                 return None
 
-            # Enhanced stability detection using protocol flags
-            # Byte 4 contains status flags in OKOK protocol
-            stable = False
-            if len(data) > 4 and weight > 0:
-                status_byte = data[4]
-                # Different bits might indicate stability - let's log and test multiple patterns
-                _LOGGER.debug("Status byte: 0x%02x (binary: %s)", status_byte, format(status_byte, '08b'))
-
-                # Try different stability detection patterns based on common OKOK protocol patterns
-                # Pattern 1: Bit 0 (0x01) - common for "measurement complete" 
-                # Pattern 2: Bit 1 (0x02) - might indicate "stable reading"
-                # Pattern 3: Bit 2 (0x04) - another stability flag
-                # Pattern 4: Bit 4 (0x10) - sometimes used for stability
-                stable_bit_0 = bool(status_byte & 0x01)
-                stable_bit_1 = bool(status_byte & 0x02)
-                stable_bit_2 = bool(status_byte & 0x04)
-                stable_bit_4 = bool(status_byte & 0x10)
-
-                _LOGGER.debug(
-                    "Stability flags - bit0: %s, bit1: %s, bit2: %s, bit4: %s",
-                    stable_bit_0, stable_bit_1, stable_bit_2, stable_bit_4
-                )
-
-                # Try multiple stability patterns - you can adjust based on your scale's behavior
-                # Common patterns in OKOK protocol:
-                # - 0x02 (bit 1): stable measurement
-                # - 0x12 (bits 1,4): stable measurement with additional flags
-                # - 0x22 (bits 1,5): another stability pattern
-                if status_byte in [0x02, 0x12, 0x22, 0x06, 0x16, 0x26]:
-                    stable = True
-                elif stable_bit_1:  # Fallback to bit 1 check
-                    stable = True
-            elif weight == 0:
-                # Zero weight can be considered "stable" (scale is empty)
-                stable = True
-
-            # Detect potential battery level from data
-            battery_level = None
-            if len(data) > 8:
-                # Some scales include battery info in later bytes
-                battery_raw = data[8] if data[8] <= 100 else None
-                if battery_raw is not None:
-                    battery_level = int(battery_raw)
-
             _LOGGER.debug(
-                "Decoded weight: %.1f%s -> %.1fg (stable: %s, battery: %s)",
-                weight_in_detected_unit, unit_detected, weight, stable, battery_level
+                "Decoded weight: raw=%d, calculated=%.3f%s -> %.1fg (stable: %s)",
+                weight_raw, weight_in_detected_unit, unit_detected, weight_grams, is_stable
             )
 
-        except (struct.error, ValueError) as err:
+            return {
+                "weight": weight_grams, 
+                "stable": is_stable, 
+                "unit": unit_detected,
+                "raw_weight": weight_in_detected_unit,
+                "decimals": decimal_bits
+            }
+
+        except (struct.error, ValueError, IndexError) as err:
             _LOGGER.error("Error decoding weight data: %s", err)
             return None
-        else:
-            result = {"weight": weight, "stable": stable, "unit": unit_detected}
-            if battery_level is not None:
-                result["battery_level"] = battery_level
-            return result
 
     def _on_disconnect(self, _: BleakClientWithServiceCache) -> None:
         """Handle disconnection."""
@@ -337,20 +371,20 @@ class ChipseaScaleDataUpdateCoordinator(DataUpdateCoordinator[ChipseaScaleData])
         _LOGGER.info("Chipsea Scale disconnected (total: %d)", self._total_disconnections)
         self._client = None
         self._notification_enabled = False
-
-        # Schedule reconnection
-        self.hass.create_task(self._async_reconnect())
+        
 
     async def _async_reconnect(self) -> None:
         """Attempt to reconnect to the scale."""
         _LOGGER.debug("Attempting to reconnect to Chipsea Scale")
         with contextlib.suppress(UpdateFailed):
-            # Errors are already logged in _ensure_connected
-            # Will try again on next data request or advertisement
             await self._ensure_connected()
 
     async def async_shutdown(self) -> None:
         """Disconnect from the scale."""
+        if self._availability_check_timer:
+            self._availability_check_timer.cancel()
+            self._availability_check_timer = None
+            
         if self._client and self._client.is_connected:
             try:
                 if self._notification_enabled:

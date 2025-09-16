@@ -10,7 +10,7 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import CONF_ADDRESS, UnitOfMass
+from homeassistant.const import CONF_ADDRESS, UnitOfMass, UnitOfVolume
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -56,6 +56,7 @@ class ChipseaScaleSensor(CoordinatorEntity[ChipseaScaleDataUpdateCoordinator], S
     """Representation of a Chipsea Scale sensor."""
 
     _attr_has_entity_name = True
+    _attr_should_poll = False
 
     def __init__(
         self,
@@ -80,12 +81,12 @@ class ChipseaScaleSensor(CoordinatorEntity[ChipseaScaleDataUpdateCoordinator], S
         )
 
     @property
-    def native_value(self) -> float | None:
-        """Return the state of the sensor."""
+    def native_value(self) -> int | None:
+        """Return the state of the sensor (always in grams)."""
         if not self.coordinator.data:
             return None
 
-        return self.coordinator.data.weight
+        return round(self.coordinator.data.weight) if self.coordinator.data.weight is not None else None
 
     @property
     def available(self) -> bool:
@@ -93,6 +94,7 @@ class ChipseaScaleSensor(CoordinatorEntity[ChipseaScaleDataUpdateCoordinator], S
         return (
             super().available
             and self.coordinator.data is not None
+            and self.coordinator.data.is_recent
         )
 
     @property
@@ -102,6 +104,16 @@ class ChipseaScaleSensor(CoordinatorEntity[ChipseaScaleDataUpdateCoordinator], S
             return None
 
         attributes = {}
+
+        # Show the scale's native unit and raw value
+        if hasattr(self.coordinator.data, 'unit') and self.coordinator.data.unit:
+            attributes["scale_unit"] = self.coordinator.data.unit
+            
+        if hasattr(self.coordinator.data, 'raw_weight') and self.coordinator.data.raw_weight is not None:
+            attributes["raw_weight"] = self.coordinator.data.raw_weight
+            
+        if hasattr(self.coordinator.data, 'decimals') and self.coordinator.data.decimals is not None:
+            attributes["decimal_places"] = self.coordinator.data.decimals
 
         if self.coordinator.data.is_stable is not None:
             attributes["is_stable"] = self.coordinator.data.is_stable

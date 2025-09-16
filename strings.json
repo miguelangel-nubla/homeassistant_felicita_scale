@@ -21,7 +21,8 @@
       }
     },
     "error": {
-      "cannot_connect": "Failed to connect to the scale. Make sure it's turned on and in range."
+      "cannot_connect": "Failed to connect to the scale. Make sure it's turned on and in range.",
+      "invalid_address": "Invalid Bluetooth address format. Please enter a valid MAC address (e.g., AA:BB:CC:DD:EE:FF)."
     },
     "abort": {
       "already_configured": "Device is already configured",

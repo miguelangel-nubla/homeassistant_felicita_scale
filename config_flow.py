@@ -131,8 +131,8 @@ class ChipseaScaleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             f"{name} ({device.address})"
                         )
 
-        except Exception:
-            _LOGGER.exception("Error discovering scales")
+        except Exception as err:
+            _LOGGER.error("Error discovering scales: %s", err)
 
         # Add manual entry option
         self._discovered_devices["manual"] = "Enter address manually"
@@ -152,21 +152,29 @@ class ChipseaScaleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            address = user_input[CONF_ADDRESS].upper().replace(":", "").replace("-", "")
+            try:
+                address = user_input[CONF_ADDRESS].strip().upper()
+                
+                # Remove common separators
+                cleaned_address = address.replace(":", "").replace("-", "").replace(" ", "")
+                
+                # Validate MAC address format
+                if len(cleaned_address) != 12 or not all(c in "0123456789ABCDEF" for c in cleaned_address):
+                    errors[CONF_ADDRESS] = "invalid_address"
+                else:
+                    # Format as proper MAC address
+                    formatted_address = ":".join([cleaned_address[i:i+2] for i in range(0, 12, 2)])
+                    
+                    await self.async_set_unique_id(formatted_address)
+                    self._abort_if_unique_id_configured()
 
-            # Format as proper MAC address
-            if len(address) == 12:
-                formatted_address = ":".join([address[i:i+2] for i in range(0, 12, 2)])
-            else:
-                formatted_address = user_input[CONF_ADDRESS].upper()
-
-            await self.async_set_unique_id(formatted_address)
-            self._abort_if_unique_id_configured()
-
-            return self.async_create_entry(
-                title=formatted_address,
-                data={CONF_ADDRESS: formatted_address},
-            )
+                    return self.async_create_entry(
+                        title=formatted_address,
+                        data={CONF_ADDRESS: formatted_address},
+                    )
+            except Exception as err:
+                _LOGGER.error("Error processing manual address entry: %s", err)
+                errors["base"] = "unknown"
 
         return self.async_show_form(
             step_id="manual",

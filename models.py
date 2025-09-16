@@ -17,11 +17,20 @@ if TYPE_CHECKING:
 class ChipseaScaleData:
     """Data class for Chipsea scale measurements."""
 
-    weight: float | None = None
-    unit: str = "g"
+    weight: float | None = None  # Weight in grams (normalized)
+    unit: str = "g"  # Scale's native unit
+    raw_weight: float | None = None  # Weight in scale's native unit
+    decimals: int = 0  # Number of decimal places from scale
     is_stable: bool = False
     battery_level: int | None = None
     last_measurement: datetime | None = field(default_factory=lambda: datetime.now())
+
+    @property
+    def is_recent(self) -> bool:
+        """Check if the last measurement is recent (within 30 seconds)."""
+        if not self.last_measurement:
+            return False
+        return (datetime.now() - self.last_measurement).total_seconds() < 30
 
     def update_weight(self, weight: float, is_stable: bool = False) -> None:
         """Update weight measurement."""
