@@ -25,12 +25,6 @@ class ChipseaScaleData:
     battery_level: int | None = None
     last_measurement: datetime | None = field(default_factory=lambda: datetime.now())
 
-    @property
-    def is_recent(self) -> bool:
-        """Check if the last measurement is recent (within 30 seconds)."""
-        if not self.last_measurement:
-            return False
-        return (datetime.now() - self.last_measurement).total_seconds() < 30
 
     def update_weight(self, weight: float, is_stable: bool = False) -> None:
         """Update weight measurement."""

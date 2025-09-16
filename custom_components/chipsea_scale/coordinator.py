@@ -67,7 +67,6 @@ class ChipseaScaleDataUpdateCoordinator(DataUpdateCoordinator[ChipseaScaleData])
         self._total_disconnections = 0
         self._last_connection_attempt = None
         self._min_reconnect_interval = timedelta(seconds=5)
-        self._availability_check_timer = None
 
         super().__init__(
             hass,
@@ -237,8 +236,6 @@ class ChipseaScaleDataUpdateCoordinator(DataUpdateCoordinator[ChipseaScaleData])
                 if "battery_level" in weight_data:
                     self.data.battery_level = weight_data["battery_level"]
 
-                # Schedule availability check
-                self._schedule_availability_check()
 
                 # Notify Home Assistant of the update
                 self.async_set_updated_data(self.data)
@@ -246,23 +243,6 @@ class ChipseaScaleDataUpdateCoordinator(DataUpdateCoordinator[ChipseaScaleData])
         except (KeyError, TypeError, ValueError) as err:
             _LOGGER.error("Error processing notification: %s", err)
 
-    def _schedule_availability_check(self) -> None:
-        """Schedule a check for data availability after 35 seconds."""
-        if self._availability_check_timer:
-            self._availability_check_timer.cancel()
-            
-        self._availability_check_timer = self.hass.loop.call_later(
-            35.0, self._check_availability
-        )
-
-    @callback
-    def _check_availability(self) -> None:
-        """Check if data is still recent and trigger entity update if not."""
-        if self.data and not self.data.is_recent:
-            _LOGGER.debug("Scale data is stale, triggering entity update for unavailable state")
-            self.async_update_listeners()
-        
-        self._availability_check_timer = None
 
     def _validate_packet(self, data: bytearray) -> bool:
         """Validate packet header and basic structure."""
@@ -381,10 +361,6 @@ class ChipseaScaleDataUpdateCoordinator(DataUpdateCoordinator[ChipseaScaleData])
 
     async def async_shutdown(self) -> None:
         """Disconnect from the scale."""
-        if self._availability_check_timer:
-            self._availability_check_timer.cancel()
-            self._availability_check_timer = None
-            
         if self._client and self._client.is_connected:
             try:
                 if self._notification_enabled:

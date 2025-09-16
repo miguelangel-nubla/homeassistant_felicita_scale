@@ -94,7 +94,6 @@ class ChipseaScaleSensor(CoordinatorEntity[ChipseaScaleDataUpdateCoordinator], S
         return (
             super().available
             and self.coordinator.data is not None
-            and self.coordinator.data.is_recent
         )
 
     @property

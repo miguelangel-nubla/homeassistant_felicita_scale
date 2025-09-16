@@ -20,10 +20,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ChipseaScaleConfigEntry)
     """Set up Chipsea Scale from a config entry."""
     address = entry.data[CONF_ADDRESS]
 
-    # Check if the device is available via Bluetooth
-    if not bluetooth.async_ble_device_from_address(hass, address.upper(), True):
-        raise ConfigEntryNotReady(f"Could not find Chipsea Scale with address {address}")
-
     coordinator = ChipseaScaleDataUpdateCoordinator(hass, address, entry)
 
     # Register for Bluetooth advertisements to detect when device comes back online
@@ -36,10 +32,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ChipseaScaleConfigEntry)
         )
     )
 
+    # Don't fail setup if initial connection fails - just log and continue
+    # The coordinator will handle reconnection when the device becomes available
     try:
         await coordinator.async_config_entry_first_refresh()
+        _LOGGER.info("Successfully connected to Chipsea Scale during setup")
     except Exception as err:
-        raise ConfigEntryNotReady(f"Unable to connect to Chipsea Scale: {err}") from err
+        _LOGGER.debug("Could not connect to Chipsea Scale during setup, will retry when device is available: %s", err)
 
     entry.runtime_data = coordinator
 
