@@ -1,4 +1,4 @@
-"""DataUpdateCoordinator for Chipsea Scale."""
+"""DataUpdateCoordinator for Felicita Scale."""
 from __future__ import annotations
 
 import asyncio
@@ -17,37 +17,42 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import CHARACTERISTIC_UUID, DOMAIN
-from .models import ChipseaScaleData
+from .const import (
+    CHARACTERISTIC_UUID, 
+    DOMAIN,
+    COMMAND_START_TIMER,
+    COMMAND_STOP_TIMER,
+    COMMAND_RESET_TIMER,
+    COMMAND_TOGGLE_TIMER,
+    COMMAND_TOGGLE_PRECISION,
+    COMMAND_TARE,
+    COMMAND_TOGGLE_UNIT,
+)
+from .models import FelicitaScaleData
 
 if TYPE_CHECKING:
     from homeassistant.components.bluetooth import BluetoothServiceInfoBleak
 
 _LOGGER = logging.getLogger(__name__)
 
-# Protocol constants
-PACKET_HEADER = 0xCA
-MIN_PACKET_LENGTH = 7
-WEIGHT_BYTES_START = 5
-STATUS_BYTE_INDEX = 3
+# Felicita protocol constants
+PACKET_LENGTH = 18  # Felicita uses 18-byte packets
+WEIGHT_BYTES_START = 3  # Weight data starts at byte 3
+WEIGHT_BYTES_END = 9    # Weight data ends at byte 9
+UNIT_BYTES_START = 9    # Unit data at bytes 9-11
+UNIT_BYTES_END = 11
+BATTERY_BYTE_INDEX = 15 # Battery level at byte 15
 
-# Status byte bit masks
-SIGN_BIT_MASK = 0x80
-STABLE_BIT_MASK = 0x01
-UNIT_DECIMAL_MASK = 0x3F
-
-# Unit type constants
-UNIT_GRAMS = 0x00
-UNIT_OUNCES = 0x03
-UNIT_POUNDS = 0x06
-UNIT_KILOGRAMS = 0x08
+# Battery level constants (from reference implementation)
+MIN_BATTERY_LEVEL = 129
+MAX_BATTERY_LEVEL = 158
 
 # Weight validation limits
 MAX_WEIGHT_GRAMS = 5000  # 5kg in grams
 
 
-class ChipseaScaleDataUpdateCoordinator(DataUpdateCoordinator[ChipseaScaleData]):
-    """Class to manage fetching data from the Chipsea Scale."""
+class FelicitaScaleDataUpdateCoordinator(DataUpdateCoordinator[FelicitaScaleData]):
+    """Class to manage fetching data from the Felicita Scale."""
 
     def __init__(
         self,
@@ -57,6 +62,7 @@ class ChipseaScaleDataUpdateCoordinator(DataUpdateCoordinator[ChipseaScaleData])
     ) -> None:
         """Initialize."""
         self.address = address.upper()
+        self._config_entry = config_entry
         self._client: BleakClientWithServiceCache | None = None
         self._ble_device: BLEDevice | None = None
         self._connect_lock = asyncio.Lock()
@@ -67,6 +73,8 @@ class ChipseaScaleDataUpdateCoordinator(DataUpdateCoordinator[ChipseaScaleData])
         self._total_disconnections = 0
         self._last_connection_attempt = None
         self._min_reconnect_interval = timedelta(seconds=5)
+        self._weight_history = []  # Track last few weight readings for stability
+        self._stability_count = 4  # Number of identical readings for stability
 
         super().__init__(
             hass,
@@ -85,6 +93,27 @@ class ChipseaScaleDataUpdateCoordinator(DataUpdateCoordinator[ChipseaScaleData])
     def notification_enabled(self) -> bool:
         """Return True if notifications are enabled."""
         return self._notification_enabled
+
+    @property
+    def device_info(self) -> dict[str, Any]:
+        """Return device information for all entities."""
+        return {
+            "identifiers": {(DOMAIN, self.address)},
+            "name": self._config_entry.title or "Felicita Scale",
+            "manufacturer": "Felicita",
+            "model": "Scale",
+            "sw_version": "1.0",
+            "connections": {("bluetooth", self.address.lower())},
+        }
+
+    @property
+    def device_name(self) -> str:
+        """Return the device name for entity naming."""
+        return self.device_info["name"]
+
+    def get_entity_name(self, entity_type: str) -> str:
+        """Generate entity name with device prefix."""
+        return f"{self.device_name} {entity_type}"
 
     @property
     def connection_stats(self) -> dict[str, Any]:
@@ -131,9 +160,9 @@ class ChipseaScaleDataUpdateCoordinator(DataUpdateCoordinator[ChipseaScaleData])
                         (now - self._last_connection_attempt).total_seconds()
                     )
 
-    async def _async_update_data(self) -> ChipseaScaleData:
+    async def _async_update_data(self) -> FelicitaScaleData:
         """Return current data - all updates are reactive via Bluetooth notifications."""
-        return self.data or ChipseaScaleData()
+        return self.data or FelicitaScaleData()
 
     async def _ensure_connected(self) -> None:
         """Ensure we have a connection to the scale."""
@@ -141,7 +170,7 @@ class ChipseaScaleDataUpdateCoordinator(DataUpdateCoordinator[ChipseaScaleData])
             if self._client and self._client.is_connected:
                 return
 
-            _LOGGER.debug("Connecting to Chipsea Scale at %s", self.address)
+            _LOGGER.debug("Connecting to Felicita Scale at %s", self.address)
 
             # Get BLE device
             if not self._ble_device:
@@ -169,11 +198,11 @@ class ChipseaScaleDataUpdateCoordinator(DataUpdateCoordinator[ChipseaScaleData])
                 self._last_successful_connection = datetime.now()
 
                 if not self._unavailable_logged:
-                    _LOGGER.info("Successfully connected to Chipsea Scale (attempt %d)",
+                    _LOGGER.info("Successfully connected to Felicita Scale (attempt %d)",
                                 self._connection_attempts)
 
                 if self._unavailable_logged:
-                    _LOGGER.info("Chipsea Scale is back online")
+                    _LOGGER.info("Felicita Scale is back online")
                     self._unavailable_logged = False
 
             except (TimeoutError, BleakError) as err:
@@ -192,7 +221,7 @@ class ChipseaScaleDataUpdateCoordinator(DataUpdateCoordinator[ChipseaScaleData])
                     if is_expected_error:
                         _LOGGER.info("Device not reachable (expected for battery-powered scales): %s", err)
                     else:
-                        _LOGGER.error("Failed to connect to Chipsea Scale: %s", err)
+                        _LOGGER.error("Failed to connect to Felicita Scale: %s", err)
                     self._unavailable_logged = True
                     
                 raise UpdateFailed(f"Failed to connect: {err}") from err
@@ -222,15 +251,17 @@ class ChipseaScaleDataUpdateCoordinator(DataUpdateCoordinator[ChipseaScaleData])
             weight_data = self._decode_weight_bytes(data)
             if weight_data:
                 if not self.data:
-                    self.data = ChipseaScaleData()
+                    self.data = FelicitaScaleData()
 
                 # Update all weight-related fields
-                self.data.weight = weight_data["weight"]  # Normalized to grams
-                self.data.is_stable = weight_data.get("stable", False)
+                new_weight = weight_data["weight"]  # Normalized to grams
+                self.data.weight = new_weight
                 self.data.unit = weight_data["unit"]  # Scale's native unit
                 self.data.raw_weight = weight_data["raw_weight"]  # Weight in native unit
-                self.data.decimals = weight_data["decimals"]  # Decimal places
                 self.data.last_measurement = datetime.now()
+                
+                # Calculate stability based on consecutive identical readings
+                self.data.is_stable = self._calculate_stability(new_weight)
 
                 # Update battery level if available
                 if "battery_level" in weight_data:
@@ -245,37 +276,67 @@ class ChipseaScaleDataUpdateCoordinator(DataUpdateCoordinator[ChipseaScaleData])
 
 
     def _validate_packet(self, data: bytearray) -> bool:
-        """Validate packet header and basic structure."""
-        if len(data) < MIN_PACKET_LENGTH:
-            _LOGGER.debug("Insufficient data length: %d bytes (minimum %d expected)", len(data), MIN_PACKET_LENGTH)
+        """Validate Felicita packet structure."""
+        if len(data) != PACKET_LENGTH:
+            _LOGGER.debug("Invalid packet length: %d bytes (expected %d)", len(data), PACKET_LENGTH)
             return False
-
-        if data[0] != PACKET_HEADER:
-            _LOGGER.debug("Invalid packet header: %02x (expected %02x)", data[0], PACKET_HEADER)
-            return False
-
         return True
 
-    def _extract_unit_and_decimals(self, status_byte: int) -> tuple[str, int]:
-        """Extract unit type and decimal places from status byte."""
-        unit_middle_bits = (status_byte >> 1) & UNIT_DECIMAL_MASK
-        unit_bits = (unit_middle_bits >> 2) & 0x0F
-        decimal_bits = unit_middle_bits & 0x03
+    def _extract_unit_from_bytes(self, data: bytearray) -> str:
+        """Extract unit from bytes 9-11 using Felicita protocol."""
+        if len(data) < UNIT_BYTES_END:
+            return "g"  # Default to grams
         
-        unit_map = {
-            UNIT_KILOGRAMS: "kg",
-            UNIT_OUNCES: "oz", 
-            UNIT_POUNDS: "lb",
-            UNIT_GRAMS: "g"
-        }
-        
-        unit_detected = unit_map.get(unit_bits, "unknown")
-        
-        _LOGGER.debug("Status byte=0x%02x: unit_bits=0x%x decimals=%d -> %s", 
-                     status_byte, unit_bits, decimal_bits, unit_detected)
-        
-        return unit_detected, decimal_bits
+        try:
+            # Extract unit bytes and decode as text
+            unit_bytes = data[UNIT_BYTES_START:UNIT_BYTES_END]
+            unit_str = bytes(unit_bytes).decode('utf-8', errors='ignore').strip()
+            
+            # Map to standard units
+            if 'g' in unit_str.lower():
+                return "g"
+            elif 'oz' in unit_str.lower():
+                return "oz"
+            else:
+                return "g"  # Default to grams
+                
+        except (UnicodeDecodeError, IndexError):
+            return "g"  # Default to grams
 
+    def _calculate_stability(self, weight: float) -> bool:
+        """Calculate if weight is stable based on consecutive identical readings."""
+        # Round weight to 1 decimal place for stability comparison
+        rounded_weight = round(weight, 1)
+        
+        # Zero weight is never considered stable (tared/empty scale)
+        if rounded_weight == 0.0:
+            self._weight_history.clear()  # Reset history when at zero
+            return False
+        
+        # Add to history
+        self._weight_history.append(rounded_weight)
+        
+        # Keep only the last stability_count readings
+        if len(self._weight_history) > self._stability_count:
+            self._weight_history.pop(0)
+        
+        # Check if we have enough readings and they're all the same
+        if len(self._weight_history) >= self._stability_count:
+            return all(w == self._weight_history[0] for w in self._weight_history)
+        
+        return False
+
+    def _calculate_battery_percentage(self, battery_byte: int) -> int:
+        """Calculate battery percentage from Felicita protocol."""
+        if battery_byte < MIN_BATTERY_LEVEL:
+            return 0
+        elif battery_byte > MAX_BATTERY_LEVEL:
+            return 100
+        else:
+            # Calculate percentage within the known range
+            percentage = ((battery_byte - MIN_BATTERY_LEVEL) / (MAX_BATTERY_LEVEL - MIN_BATTERY_LEVEL)) * 100
+            return round(percentage)
+    
     def _convert_to_grams(self, weight: float, unit: str) -> float:
         """Convert weight from native unit to grams."""
         conversion_factors = {
@@ -291,64 +352,78 @@ class ChipseaScaleDataUpdateCoordinator(DataUpdateCoordinator[ChipseaScaleData])
             return weight
 
     def _decode_weight_bytes(self, data: bytearray) -> dict[str, Any] | None:
-        """Decode weight from characteristic data using Chipsea protocol."""
-        if len(data) > 8:
-            _LOGGER.debug("Extended packet size: %d bytes, using first 8 bytes", len(data))
-            data = data[:8]
-
+        """Decode weight from characteristic data using Felicita protocol."""
         if not self._validate_packet(data):
             return None
 
         try:
             _LOGGER.debug("Raw packet: %s", ' '.join(f'{b:02x}' for b in data))
             
-            weight_raw = struct.unpack('>H', data[WEIGHT_BYTES_START:WEIGHT_BYTES_START+2])[0]
+            # Extract weight from bytes 3-9 as ASCII values (Felicita protocol)
+            weight_bytes = data[WEIGHT_BYTES_START:WEIGHT_BYTES_END]
             
-            status_byte = data[STATUS_BYTE_INDEX] if len(data) > STATUS_BYTE_INDEX else 0
-            is_negative = bool(status_byte & SIGN_BIT_MASK)
-            is_stable = bool(status_byte & STABLE_BIT_MASK)
+            # Convert ASCII bytes directly to string, then to number
+            weight_str = ""
+            weight_digits = ""
+            try:
+                weight_str = weight_bytes.decode('ascii', errors='ignore')
+                # Remove any non-digit characters
+                weight_digits = ''.join(c for c in weight_str if c.isdigit())
+                    
+            except (UnicodeDecodeError, ValueError):
+                _LOGGER.warning("Failed to decode weight from bytes: %s", weight_bytes.hex())
+                weight_digits = ""
             
-            unit_detected, decimal_bits = self._extract_unit_and_decimals(status_byte)
+            # Extract unit from bytes 9-11 FIRST, then adjust weight parsing
+            unit_detected = self._extract_unit_from_bytes(data)
             
-            _LOGGER.debug("Weight raw=0x%04x (%d) negative=%s stable=%s unit=%s decimals=%d", 
-                         weight_raw, weight_raw, is_negative, is_stable, unit_detected, decimal_bits)
-
-            if weight_raw == 0:
+            # Now re-parse weight with correct decimal places based on unit
+            if not weight_digits:
                 weight_in_detected_unit = 0.0
             else:
-                scale_factor = 10 ** decimal_bits if decimal_bits > 0 else 1
-                weight_in_detected_unit = float(weight_raw) / scale_factor
-                if is_negative:
-                    weight_in_detected_unit = -weight_in_detected_unit
+                weight_raw = int(weight_digits)
+                
+                # Different units have different decimal precision
+                if unit_detected == "oz":
+                    # Ounces: "020140" → 2.014 oz (divide by 10000)
+                    weight_in_detected_unit = float(weight_raw) / 10000.0
+                else:
+                    # Grams: "000640" → 6.40 g (divide by 100)
+                    weight_in_detected_unit = float(weight_raw) / 100.0
             
-
+            # Extract battery level from byte 15
+            battery_level = None
+            if len(data) > BATTERY_BYTE_INDEX:
+                battery_byte = data[BATTERY_BYTE_INDEX]
+                battery_level = self._calculate_battery_percentage(battery_byte)
+            
+            # Convert to grams for consistency
             weight_grams = self._convert_to_grams(weight_in_detected_unit, unit_detected)
 
-            if unit_detected in {"g", "kg", "lb", "oz"} and abs(weight_grams) > MAX_WEIGHT_GRAMS:
+            if abs(weight_grams) > MAX_WEIGHT_GRAMS:
                 _LOGGER.warning("Weight value out of range: %.1fg (max: %dg)", weight_grams, MAX_WEIGHT_GRAMS)
                 return None
 
             _LOGGER.debug(
-                "Decoded weight: raw=%d, calculated=%.3f%s -> %.1fg (stable: %s)",
-                weight_raw, weight_in_detected_unit, unit_detected, weight_grams, is_stable
+                "Weight parsing: raw_bytes=%s ascii=%s digits=%s -> %.3f%s -> %.1fg (battery: %s%%)",
+                weight_bytes.hex(), weight_str, weight_digits, weight_in_detected_unit, unit_detected, weight_grams, battery_level
             )
 
             return {
-                "weight": weight_grams, 
-                "stable": is_stable, 
+                "weight": weight_grams,
                 "unit": unit_detected,
                 "raw_weight": weight_in_detected_unit,
-                "decimals": decimal_bits
+                "battery_level": battery_level
             }
 
-        except (struct.error, ValueError, IndexError) as err:
+        except (ValueError, IndexError) as err:
             _LOGGER.error("Error decoding weight data: %s", err)
             return None
 
     def _on_disconnect(self, _: BleakClientWithServiceCache) -> None:
         """Handle disconnection."""
         self._total_disconnections += 1
-        _LOGGER.info("Chipsea Scale disconnected (total: %d)", self._total_disconnections)
+        _LOGGER.info("Felicita Scale disconnected (total: %d)", self._total_disconnections)
         self._client = None
         self._notification_enabled = False
         
@@ -358,7 +433,7 @@ class ChipseaScaleDataUpdateCoordinator(DataUpdateCoordinator[ChipseaScaleData])
 
     async def _async_reconnect(self) -> None:
         """Attempt to reconnect to the scale."""
-        _LOGGER.debug("Attempting to reconnect to Chipsea Scale")
+        _LOGGER.debug("Attempting to reconnect to Felicita Scale")
         with contextlib.suppress(UpdateFailed):
             await self._ensure_connected()
 
@@ -374,4 +449,56 @@ class ChipseaScaleDataUpdateCoordinator(DataUpdateCoordinator[ChipseaScaleData])
             finally:
                 self._client = None
                 self._notification_enabled = False
+
+    async def _send_command(self, command: int) -> bool:
+        """Send a command to the Felicita scale."""
+        try:
+            await self._ensure_connected()
+            if not self._client or not self._client.is_connected:
+                _LOGGER.error("Cannot send command: not connected to scale")
+                return False
+            
+            command_bytes = bytes([command])
+            await self._client.write_gatt_char(CHARACTERISTIC_UUID, command_bytes)
+            _LOGGER.debug("Sent command 0x%02x to Felicita scale", command)
+            return True
+            
+        except BleakError as err:
+            _LOGGER.error("Error sending command 0x%02x: %s", command, err)
+            return False
+
+    async def async_tare(self) -> bool:
+        """Tare the scale (reset to zero)."""
+        _LOGGER.info("Taring Felicita scale")
+        return await self._send_command(COMMAND_TARE)
+
+    async def async_toggle_unit(self) -> bool:
+        """Toggle between grams and ounces."""
+        _LOGGER.info("Toggling unit on Felicita scale")
+        return await self._send_command(COMMAND_TOGGLE_UNIT)
+
+    async def async_start_timer(self) -> bool:
+        """Start the scale's timer."""
+        _LOGGER.info("Starting timer on Felicita scale")
+        return await self._send_command(COMMAND_START_TIMER)
+
+    async def async_stop_timer(self) -> bool:
+        """Stop the scale's timer."""
+        _LOGGER.info("Stopping timer on Felicita scale")
+        return await self._send_command(COMMAND_STOP_TIMER)
+
+    async def async_reset_timer(self) -> bool:
+        """Reset the scale's timer to zero."""
+        _LOGGER.info("Resetting timer on Felicita scale")
+        return await self._send_command(COMMAND_RESET_TIMER)
+
+    async def async_toggle_timer(self) -> bool:
+        """Toggle the scale's timer (start/stop)."""
+        _LOGGER.info("Toggling timer on Felicita scale")
+        return await self._send_command(COMMAND_TOGGLE_TIMER)
+
+    async def async_toggle_precision(self) -> bool:
+        """Toggle the scale's precision mode."""
+        _LOGGER.info("Toggling precision on Felicita scale")
+        return await self._send_command(COMMAND_TOGGLE_PRECISION)
 

@@ -1,4 +1,4 @@
-"""Data models for Chipsea Scale integration."""
+"""Data models for Felicita Scale integration."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -10,17 +10,16 @@ from homeassistant.util.unit_conversion import MassConverter
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
 
-    from .coordinator import ChipseaScaleDataUpdateCoordinator
+    from .coordinator import FelicitaScaleDataUpdateCoordinator
 
 
 @dataclass
-class ChipseaScaleData:
-    """Data class for Chipsea scale measurements."""
+class FelicitaScaleData:
+    """Data class for Felicita scale measurements."""
 
     weight: float | None = None  # Weight in grams (normalized)
     unit: str = "g"  # Scale's native unit
     raw_weight: float | None = None  # Weight in scale's native unit
-    decimals: int = 0  # Number of decimal places from scale
     is_stable: bool = False
     battery_level: int | None = None
     last_measurement: datetime | None = field(default_factory=lambda: datetime.now())
@@ -44,5 +43,5 @@ class ChipseaScaleData:
             return self.weight
 
 
-type ChipseaScaleConfigEntry = ConfigEntry[ChipseaScaleDataUpdateCoordinator]
+type FelicitaScaleConfigEntry = ConfigEntry[FelicitaScaleDataUpdateCoordinator]
 

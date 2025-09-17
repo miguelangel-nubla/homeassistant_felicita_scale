@@ -2,19 +2,19 @@
   "config": {
     "step": {
       "bluetooth_confirm": {
-        "title": "Confirm Chipsea Scale",
-        "description": "Do you want to set up the Chipsea Scale {name}?"
+        "title": "Confirm Felicita Scale",
+        "description": "Do you want to set up the Felicita Scale {name}?"
       },
       "user": {
-        "title": "Select Chipsea Scale",
-        "description": "Select your Chipsea Scale from the list of discovered devices.",
+        "title": "Select Felicita Scale",
+        "description": "Select your Felicita Scale from the list of discovered devices.",
         "data": {
           "address": "Device"
         }
       },
       "manual": {
-        "title": "Add Chipsea Scale Manually",
-        "description": "Enter the Bluetooth address of your Chipsea Scale.",
+        "title": "Add Felicita Scale Manually",
+        "description": "Enter the Bluetooth address of your Felicita Scale.",
         "data": {
           "address": "Bluetooth Address"
         }
@@ -26,7 +26,7 @@
     },
     "abort": {
       "already_configured": "Device is already configured",
-      "not_supported": "Device is not a supported Chipsea scale"
+      "not_supported": "Device is not a supported Felicita scale"
     }
   },
   "entity": {

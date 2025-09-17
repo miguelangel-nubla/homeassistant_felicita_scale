@@ -1,4 +1,4 @@
-"""Config flow for Chipsea Scale integration."""
+"""Config flow for Felicita Scale integration."""
 from __future__ import annotations
 
 import logging
@@ -17,8 +17,8 @@ from .const import DEVICE_NAME_PREFIXES, DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 
-class ChipseaScaleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for Chipsea Scale."""
+class FelicitaScaleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    """Handle a config flow for Felicita Scale."""
 
     VERSION = 1
     MINOR_VERSION = 1
@@ -32,7 +32,7 @@ class ChipseaScaleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, discovery_info: bluetooth.BluetoothServiceInfoBleak
     ) -> FlowResult:
         """Handle the bluetooth discovery step."""
-        # Check if this is actually a supported Chipsea scale device
+        # Check if this is actually a supported Felicita scale device
         if not self._is_supported_device(discovery_info.name, discovery_info.address):
             return self.async_abort(reason="not_supported")
 
@@ -109,7 +109,7 @@ class ChipseaScaleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def _async_discover_scales(self) -> None:
-        """Discover Chipsea scales."""
+        """Discover Felicita scales."""
         self._discovered_devices = {}
 
         try:
@@ -138,7 +138,7 @@ class ChipseaScaleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._discovered_devices["manual"] = "Enter address manually"
 
     def _is_supported_device(self, name: str | None, address: str) -> bool:
-        """Check if this is a supported Chipsea scale device."""
+        """Check if this is a supported Felicita scale device."""
         if not name:
             return False
 

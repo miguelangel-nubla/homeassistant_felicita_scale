@@ -1,43 +1,75 @@
-Chipsea Scale Protocol Documentation
+Felicita Scale Protocol Documentation
 ====================================
+
+Bluetooth Connection
+-------------------
+Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
+Characteristic UUID: 0000FFE1-0000-1000-8000-00805F9B34FB
+Device Name: "FELICITA"
 
 Packet Structure
 ----------------
-19 bytes total, using first 8 bytes:
+18 bytes total packet length
 
-Byte 0: 0xCA (header)
-Byte 1: 0x10 (command/status)  
-Byte 2: Unknown/unused
-Byte 3: Status byte (unit, decimals, sign, stability)
-Byte 4: Unknown/unused
-Bytes 5-6: Weight data (16-bit big-endian)
-Byte 7: Unknown/unused
+Bytes 3-9: Weight data (ASCII encoded)
+Bytes 9-11: Unit data (text encoded)
+Byte 15: Battery level indicator
 
-Status Byte (byte 3) - Bit Layout
-----------------------------------
-Bit 7: Sign (1 = negative, 0 = positive)
-Bits 6-3: Unit type (4 bits)
-Bits 2-1: Decimal places (2 bits)  
-Bit 0: Stability (1 = stable, 0 = changing)
+Weight Data Processing
+---------------------
+1. Extract weight bytes from positions 3-9
+2. Decode ASCII bytes to string, filter for digits only
+3. Parse digits as integer
+4. Apply unit-specific decimal scaling:
+   - Grams: divide by 100 (e.g., "000640" → 6.40g)
+   - Ounces: divide by 10000 (e.g., "020140" → 2.014oz)
+5. Result is weight in scale's native unit
 
-Unit Type Encoding (bits 6-3):
-- 0000: Grams
-- 0011: Ounces
-- 0110: Pounds  
-- 1000: Kilograms
+Unit Detection
+--------------
+- Extract bytes 9-11 and decode as UTF-8 text
+- "g" indicates grams
+- "oz" indicates ounces
+- Default to grams if unclear
 
-Weight Processing
------------------
-1. Extract raw weight from bytes 5-6 (big-endian)
-2. Scale by decimals: weight = raw ÷ (10^decimal_bits)
-3. Apply sign from bit 7 of status byte
-4. Result is weight in native unit
+Battery Level
+-------------
+- Extract byte 15
+- Range: 129-158 (MIN_BATTERY_LEVEL to MAX_BATTERY_LEVEL)
+- Calculate percentage: ((value - 129) / (158 - 129)) * 100
+
+Control Commands
+---------------
+Send single byte commands to control the scale:
+- 0x52: Start timer
+- 0x53: Stop timer  
+- 0x43: Reset timer
+- 0x42: Toggle timer (start/stop)
+- 0x44: Toggle precision mode
+- 0x54: Tare (reset to zero)
+- 0x55: Toggle unit (grams/ounces)
+
+Stability Detection
+-------------------
+- Integration computes stability based on consecutive identical readings
+- Requires 4 consecutive readings with same value (rounded to 1 decimal)
+- Zero weight (0.0g) is never considered stable
+- Resets on any weight change
 
 Examples:
-- Status 0x46 (01000110): kg, 3 decimals, positive, unstable (bit 0 = 0)
-- Status 0x47 (01000111): kg, 3 decimals, positive, stable (bit 0 = 1)  
-- Status 0x1C (00011100): oz, 2 decimals, positive, unstable (bit 0 = 0)
-- Status 0xC7 (11000111): kg, 3 decimals, negative, stable (bit 0 = 1)
+--------
+Grams example:
+Raw packet: [... 48 48 48 54 52 48 103 0 0 ... 145 ...]
+Weight bytes (3-9): [48 48 48 54 52 48] → "000540" → 5.40g
+Unit bytes (9-11): [103 0 0] → "g" → grams  
+Battery byte (15): 145 → ((145-129)/(158-129))*100 = 55%
+Result: 5.40g, 55% battery
 
-Sample Calculation:
-Raw 0x0808 (2056), status 0x46 → 2056÷1000 = +2.056 kg
+Ounces example:
+Raw packet: [... 48 50 48 49 52 48 111 122 0 ... 145 ...]
+Weight bytes (3-9): [48 50 48 49 52 48] → "020140" → 2.014oz
+Unit bytes (9-11): [111 122 0] → "oz" → ounces
+Battery byte (15): 145 → 55%
+Result: 2.014oz, 55% battery
+
+Send tare command: Write [0x54] to characteristic

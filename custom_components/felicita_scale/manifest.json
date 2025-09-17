@@ -1,0 +1,29 @@
+{
+  "domain": "felicita_scale",
+  "name": "Felicita Scale",
+  "codeowners": ["@miguelangel-nubla"],
+  "config_flow": true,
+  "dependencies": ["bluetooth"],
+  "documentation": "https://github.com/miguelangel-nubla/homeassistant_felicita_scale",
+  "integration_type": "device",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/miguelangel-nubla/homeassistant_felicita_scale/issues",
+  "quality_scale": "gold",
+  "requirements": ["bleak>=0.20.0", "bleak-retry-connector>=3.0.0"],
+  "version": "1.1.0",
+  "bluetooth": [
+    {
+      "service_uuid": "0000ffe0-0000-1000-8000-00805f9b34fb"
+    },
+    {
+      "service_uuid": "0000fee0-0000-1000-8000-00805f9b34fb"
+    },
+    {
+      "local_name": "FELICITA"
+    },
+    {
+      "manufacturer_id": 58000,
+      "manufacturer_data_start": [136, 160]
+    }
+  ]
+}

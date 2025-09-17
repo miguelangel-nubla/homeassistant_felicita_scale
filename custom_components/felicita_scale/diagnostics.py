@@ -1,4 +1,4 @@
-"""Diagnostics support for Chipsea Scale."""
+"""Diagnostics support for Felicita Scale."""
 from __future__ import annotations
 
 from typing import Any
@@ -7,13 +7,13 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntry
 
-from .models import ChipseaScaleConfigEntry
+from .models import FelicitaScaleConfigEntry
 
 TO_REDACTED = {"address"}
 
 
 async def async_get_config_entry_diagnostics(
-    hass: HomeAssistant, entry: ChipseaScaleConfigEntry
+    hass: HomeAssistant, entry: FelicitaScaleConfigEntry
 ) -> dict[str, Any]:
     """Return diagnostics for a config entry."""
     coordinator = entry.runtime_data
