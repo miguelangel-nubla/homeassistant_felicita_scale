@@ -1,87 +1,72 @@
-"""Button platform for Felicita Scale integration."""
+"""Button platform for the Felicita Scale integration."""
+
 from __future__ import annotations
 
-from homeassistant.components.button import ButtonEntity
-from homeassistant.config_entries import ConfigEntry
+from collections.abc import Callable, Coroutine
+from dataclasses import dataclass
+from typing import Any
+
+from homeassistant.components.button import ButtonEntity, ButtonEntityDescription
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .coordinator import FelicitaScaleDataUpdateCoordinator
+from .entity import FelicitaScaleEntity
 from .models import FelicitaScaleConfigEntry
+
+PARALLEL_UPDATES = 0
+
+
+@dataclass(frozen=True, kw_only=True)
+class FelicitaScaleButtonEntityDescription(ButtonEntityDescription):
+    """Describes a Felicita Scale button."""
+
+    press_fn: Callable[[FelicitaScaleDataUpdateCoordinator], Coroutine[Any, Any, None]]
+
+
+BUTTON_DESCRIPTIONS: tuple[FelicitaScaleButtonEntityDescription, ...] = (
+    FelicitaScaleButtonEntityDescription(
+        # Unique ID suffixes predate the descriptions and must stay stable
+        key="tare",
+        translation_key="tare",
+        press_fn=lambda coordinator: coordinator.async_tare(),
+    ),
+    FelicitaScaleButtonEntityDescription(
+        key="timer_reset",
+        translation_key="reset_timer",
+        press_fn=lambda coordinator: coordinator.async_reset_timer(),
+    ),
+)
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: FelicitaScaleConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up Felicita Scale button based on a config entry."""
+    """Set up Felicita Scale buttons based on a config entry."""
     coordinator = config_entry.runtime_data
-
-    async_add_entities([
-        FelicitaScaleTareButton(coordinator, config_entry),
-        FelicitaScaleTimerResetButton(coordinator, config_entry),
-    ])
-
-
-class FelicitaScaleTareButton(CoordinatorEntity[FelicitaScaleDataUpdateCoordinator], ButtonEntity):
-    """Representation of a Felicita Scale tare button."""
-
-    _attr_has_entity_name = True
-
-    def __init__(
-        self,
-        coordinator: FelicitaScaleDataUpdateCoordinator,
-        config_entry: FelicitaScaleConfigEntry,
-    ) -> None:
-        """Initialize the button."""
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{config_entry.entry_id}_tare"
-        self._attr_name = "Tare"
-        self._attr_icon = "mdi:scale-balance"
-        
-        self._attr_device_info = coordinator.device_info
-
-    async def async_press(self) -> None:
-        """Press the button."""
-        await self.coordinator.async_tare()
-
-    @property
-    def available(self) -> bool:
-        """Return if entity is available."""
-        return (
-            self.coordinator.last_update_success
-            and self.coordinator.is_connected
-        )
+    async_add_entities(
+        FelicitaScaleButton(coordinator, config_entry, description)
+        for description in BUTTON_DESCRIPTIONS
+    )
 
 
-class FelicitaScaleTimerResetButton(CoordinatorEntity[FelicitaScaleDataUpdateCoordinator], ButtonEntity):
-    """Representation of a Felicita Scale timer reset button."""
+class FelicitaScaleButton(FelicitaScaleEntity, ButtonEntity):
+    """A button that sends a command to the scale."""
 
-    _attr_has_entity_name = True
+    entity_description: FelicitaScaleButtonEntityDescription
 
     def __init__(
         self,
         coordinator: FelicitaScaleDataUpdateCoordinator,
         config_entry: FelicitaScaleConfigEntry,
+        description: FelicitaScaleButtonEntityDescription,
     ) -> None:
         """Initialize the button."""
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{config_entry.entry_id}_timer_reset"
-        self._attr_name = "Reset Timer"
-        self._attr_icon = "mdi:timer-off"
-        
-        self._attr_device_info = coordinator.device_info
+        super().__init__(coordinator, f"{config_entry.entry_id}_{description.key}")
+        self.entity_description = description
 
     async def async_press(self) -> None:
         """Press the button."""
-        await self.coordinator.async_reset_timer()
-
-    @property
-    def available(self) -> bool:
-        """Return if entity is available."""
-        return (
-            self.coordinator.last_update_success
-            and self.coordinator.is_connected
-        )
+        await self.entity_description.press_fn(self.coordinator)

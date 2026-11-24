@@ -1,0 +1,37 @@
+{
+  "entity": {
+    "button": {
+      "tare": {
+        "default": "mdi:scale-balance"
+      },
+      "reset_timer": {
+        "default": "mdi:timer-refresh-outline"
+      }
+    },
+    "select": {
+      "unit": {
+        "default": "mdi:weight-gram",
+        "state": {
+          "grams": "mdi:weight-gram",
+          "ounces": "mdi:weight-pound"
+        }
+      }
+    },
+    "switch": {
+      "timer": {
+        "default": "mdi:timer-outline",
+        "state": {
+          "off": "mdi:timer-pause-outline",
+          "on": "mdi:timer-play-outline"
+        }
+      },
+      "precision": {
+        "default": "mdi:decimal",
+        "state": {
+          "off": "mdi:decimal",
+          "on": "mdi:decimal-increase"
+        }
+      }
+    }
+  }
+}

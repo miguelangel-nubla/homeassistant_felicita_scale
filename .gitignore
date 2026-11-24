@@ -14,3 +14,8 @@ __pycache__/
 # OS files
 .DS_Store
 Thumbs.db
+# Test / tooling
+.pytest_cache/
+.ruff_cache/
+.coverage
+.venv/

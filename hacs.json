@@ -1,7 +1,4 @@
 {
   "name": "Felicita Scale",
-  "hacs": "1.0.0",
-  "domains": ["sensor"],
-  "iot_class": "Local Push",
-  "homeassistant": "2023.1.0"
+  "homeassistant": "2025.2.0"
 }

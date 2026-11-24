@@ -1,0 +1,87 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "bluetooth_confirm": {
+        "title": "Confirm Felicita Scale",
+        "description": "Do you want to set up the Felicita Scale {name}? Close any phone app connected to the scale, or Home Assistant cannot connect to it."
+      },
+      "user": {
+        "title": "Select Felicita Scale",
+        "description": "Select your Felicita Scale from the list of discovered devices.",
+        "data": {
+          "address": "Device"
+        },
+        "data_description": {
+          "address": "Scales that are on and in range of a Bluetooth adapter or proxy are listed here. If yours is missing, turn it on, or enter its address manually."
+        }
+      },
+      "manual": {
+        "title": "Add Felicita Scale manually",
+        "description": "Enter the Bluetooth address of your Felicita Scale.",
+        "data": {
+          "address": "Bluetooth address"
+        },
+        "data_description": {
+          "address": "For example AA:BB:CC:DD:EE:FF."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "The scale is not in range. Make sure it is turned on and close to a Bluetooth adapter or proxy.",
+      "invalid_address": "Invalid Bluetooth address. Enter a MAC address such as AA:BB:CC:DD:EE:FF."
+    },
+    "abort": {
+      "already_configured": "Device is already configured",
+      "already_in_progress": "Configuration flow is already in progress",
+      "not_supported": "Device is not a supported Felicita scale"
+    }
+  },
+  "entity": {
+    "button": {
+      "tare": {
+        "name": "Tare"
+      },
+      "reset_timer": {
+        "name": "Reset timer"
+      }
+    },
+    "select": {
+      "unit": {
+        "name": "Unit",
+        "state": {
+          "grams": "Grams",
+          "ounces": "Ounces"
+        }
+      }
+    },
+    "sensor": {
+      "weight": {
+        "name": "Weight"
+      }
+    },
+    "switch": {
+      "timer": {
+        "name": "Timer"
+      },
+      "precision": {
+        "name": "Precision"
+      }
+    }
+  },
+  "exceptions": {
+    "not_connected": {
+      "message": "The scale is not connected."
+    },
+    "command_failed": {
+      "message": "Failed to send command to the scale: {error}"
+    }
+  },
+  "selector": {
+    "address": {
+      "options": {
+        "manual": "Enter address manually"
+      }
+    }
+  }
+}

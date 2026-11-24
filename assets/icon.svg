@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Felicita Scale integration icon. Original artwork for this project,
+  not a Felicita trademark. Source of brand/*.png: run assets/build_brand.py.
+  Colors are tokens that build_brand.py swaps for the dark-background variant:
+    #2E2723 body   #4A403A body highlight   #171311 display
+    #FFB23E LED    #C8733F cup              #A0938A steam
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="16 8 480 480" width="512" height="512">
+  <!-- Steam -->
+  <g fill="none" stroke="#A0938A" stroke-width="16" stroke-linecap="round">
+    <path d="M206 116c-14-18 14-30 0-48s12-28 2-40"/>
+    <path d="M256 116c-14-18 14-30 0-48s12-28 2-40"/>
+    <path d="M306 116c-14-18 14-30 0-48s12-28 2-40"/>
+  </g>
+  <!-- Cup: handle, bowl, saucer -->
+  <g fill="#C8733F">
+    <path d="M360 176a52 52 0 1 1 0 104v-26a26 26 0 1 0 0-52z"/>
+    <path d="M128 144h256l-18 132a52 52 0 0 1-51 44h-118a52 52 0 0 1-51-44z"/>
+    <rect x="96" y="314" width="320" height="22" rx="11"/>
+  </g>
+  <!-- Scale body with top highlight -->
+  <rect x="16" y="344" width="480" height="136" rx="40" fill="#2E2723"/>
+  <rect x="40" y="356" width="432" height="8" rx="4" fill="#4A403A"/>
+  <!-- LED display reading 18.00 -->
+  <rect x="172" y="376" width="168" height="60" rx="14" fill="#171311"/>
+  <g fill="#FFB23E"><rect x="213" y="392" width="5" height="9.5" rx="2"/><rect x="213" y="406.5" width="5" height="9.5" rx="2"/><rect x="231" y="387" width="12" height="5" rx="2"/><rect x="243" y="392" width="5" height="9.5" rx="2"/><rect x="243" y="406.5" width="5" height="9.5" rx="2"/><rect x="231" y="416" width="12" height="5" rx="2"/><rect x="226" y="406.5" width="5" height="9.5" rx="2"/><rect x="226" y="392" width="5" height="9.5" rx="2"/><rect x="231" y="401.5" width="12" height="5" rx="2"/><rect x="254" y="416" width="5" height="5" rx="2"/><rect x="269" y="387" width="12" height="5" rx="2"/><rect x="281" y="392" width="5" height="9.5" rx="2"/><rect x="281" y="406.5" width="5" height="9.5" rx="2"/><rect x="269" y="416" width="12" height="5" rx="2"/><rect x="264" y="406.5" width="5" height="9.5" rx="2"/><rect x="264" y="392" width="5" height="9.5" rx="2"/><rect x="299" y="387" width="12" height="5" rx="2"/><rect x="311" y="392" width="5" height="9.5" rx="2"/><rect x="311" y="406.5" width="5" height="9.5" rx="2"/><rect x="299" y="416" width="12" height="5" rx="2"/><rect x="294" y="406.5" width="5" height="9.5" rx="2"/><rect x="294" y="392" width="5" height="9.5" rx="2"/></g>
+</svg>

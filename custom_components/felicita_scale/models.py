@@ -1,11 +1,14 @@
-"""Data models for Felicita Scale integration."""
+"""Data models for the Felicita Scale integration."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from homeassistant.util.unit_conversion import MassConverter
+from homeassistant.util import dt as dt_util
+
+from .protocol import UNIT_GRAMS
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -13,35 +16,16 @@ if TYPE_CHECKING:
     from .coordinator import FelicitaScaleDataUpdateCoordinator
 
 
-@dataclass
+@dataclass(slots=True)
 class FelicitaScaleData:
-    """Data class for Felicita scale measurements."""
+    """Latest state reported by the scale."""
 
     weight: float | None = None  # Weight in grams (normalized)
-    unit: str = "g"  # Scale's native unit
-    raw_weight: float | None = None  # Weight in scale's native unit
+    unit: str = UNIT_GRAMS  # Unit shown on the scale
+    raw_weight: float | None = None  # Weight in the unit shown on the scale
     is_stable: bool = False
     battery_level: int | None = None
-    last_measurement: datetime | None = field(default_factory=lambda: datetime.now())
-
-
-    def update_weight(self, weight: float, is_stable: bool = False) -> None:
-        """Update weight measurement."""
-        self.weight = weight
-        self.is_stable = is_stable
-        self.last_measurement = datetime.now()
-
-    def get_weight_in_unit(self, target_unit: str) -> float | None:
-        """Get weight converted to target unit using Home Assistant's converter."""
-        if self.weight is None:
-            return None
-
-        try:
-            return MassConverter.convert(self.weight, self.unit, target_unit)
-        except ValueError:
-            # Return original value if conversion not supported
-            return self.weight
+    last_measurement: datetime = field(default_factory=dt_util.utcnow)
 
 
 type FelicitaScaleConfigEntry = ConfigEntry[FelicitaScaleDataUpdateCoordinator]
-

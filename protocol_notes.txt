@@ -11,6 +11,7 @@ Packet Structure
 ----------------
 18 bytes total packet length
 
+Byte 2: Sign, '+' (0x2B) or '-' (0x2D)
 Bytes 3-9: Weight data (ASCII encoded)
 Bytes 9-11: Unit data (text encoded)
 Byte 15: Battery level indicator
@@ -23,13 +24,14 @@ Weight Data Processing
 4. Apply unit-specific decimal scaling:
    - Grams: divide by 100 (e.g., "000640" → 6.40g)
    - Ounces: divide by 10000 (e.g., "020140" → 2.014oz)
-5. Result is weight in scale's native unit
+5. Negate if byte 2 is '-'
+6. Result is weight in scale's native unit
 
 Unit Detection
 --------------
-- Extract bytes 9-11 and decode as UTF-8 text
-- "g" indicates grams
+- Extract bytes 9-11 and decode as ASCII text
 - "oz" indicates ounces
+- "g" indicates grams
 - Default to grams if unclear
 
 Battery Level
@@ -59,16 +61,16 @@ Stability Detection
 Examples:
 --------
 Grams example:
-Raw packet: [... 48 48 48 54 52 48 103 0 0 ... 145 ...]
-Weight bytes (3-9): [48 48 48 54 52 48] → "000540" → 5.40g
-Unit bytes (9-11): [103 0 0] → "g" → grams  
+Raw packet: [1 2 43 48 48 48 53 52 48 103 32 ... 145 ...]
+Weight bytes (3-9): [48 48 48 53 52 48] → "000540" → 5.40g
+Unit bytes (9-11): [103 32] → "g" → grams  
 Battery byte (15): 145 → ((145-129)/(158-129))*100 = 55%
 Result: 5.40g, 55% battery
 
 Ounces example:
-Raw packet: [... 48 50 48 49 52 48 111 122 0 ... 145 ...]
+Raw packet: [1 2 43 48 50 48 49 52 48 111 122 ... 145 ...]
 Weight bytes (3-9): [48 50 48 49 52 48] → "020140" → 2.014oz
-Unit bytes (9-11): [111 122 0] → "oz" → ounces
+Unit bytes (9-11): [111 122] → "oz" → ounces
 Battery byte (15): 145 → 55%
 Result: 2.014oz, 55% battery
 
